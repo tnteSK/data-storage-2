@@ -1,1 +1,1 @@
-wss://scope-passes-prev-scholars.trycloudflare.com
+wss://arc-emacs-robertson-internal.trycloudflare.com
