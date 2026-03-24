@@ -25,22 +25,27 @@
         let ws = null;
 
         async function init() {
-            try {
-                ui.innerText = "Status: Fetching link from GitHub...";
-                const res = await fetch('cloudflared_link.txt?t=' + Date.now())
-    .then(r => r.text())
-    .then(url => {
+    try {
+        ui.innerText = "Status: Fetching link from GitHub...";
+        const response = await fetch('cloudflared_link.txt?t=' + Date.now());
+        
+        if (!response.ok) throw new Error("File not found");
+        
+        const url = (await response.text()).trim();
         console.log("Connecting to:", url);
-        connect(url.trim());
-    });
-                if (!res.ok) throw new Error("Link file not found");
-                const url = (await res.text()).trim();
-                connect(url);
-            } catch (e) {
-                ui.innerText = "Status: Error. Retrying...";
-                setTimeout(init, 3000);
-            }
+        
+        let finalUrl = url;
+        if (url.startsWith('https://')) {
+            finalUrl = 'wss://' + url.substring(8);
         }
+        
+        connect(finalUrl);
+    } catch (e) {
+        console.error(e);
+        ui.innerText = "Status: Error. Retrying...";
+        setTimeout(init, 3000);
+    }
+}
 
         function connect(url) {
             ws = new WebSocket(url);
