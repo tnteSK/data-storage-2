@@ -2,39 +2,126 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <title>dots</title>
     <style>
-        body { background: #000; color: #0f0; font-family: monospace; }
-        #log { border: 1px solid #0f0; height: 400px; overflow: auto; padding: 10px; }
+        body { background: #0a0a0a; margin: 0; overflow: hidden; font-family: sans-serif; }
+        canvas { display: block; }
+        #ui { position: absolute; top: 10px; left: 10px; color: #0f0; pointer-events: none; }
     </style>
 </head>
 <body>
-    <div id="status">Status: Checking...</div>
-    <div id="log"></div>
+    <div id="ui">Status: Checking tunnel...</div>
+    <canvas id="gameCanvas"></canvas>
+
     <script>
-        const status = document.getElementById('status');
-        const log = document.getElementById('log');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const ui = document.getElementById('ui');
+        
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
 
-        async function start() {
+        let players = [];
+        let ws = null;
+
+        async function init() {
             try {
+                ui.innerText = "Status: Fetching link from GitHub...";
                 const res = await fetch(`cloudflared_link.txt?t=${Date.now()}`);
-                if (!res.ok) throw new Error("File not found");
+                if (!res.ok) throw new Error("Link file not found");
                 const url = (await res.text()).trim();
-                
-                status.innerText = "Connecting: " + url;
-                const ws = new WebSocket(url);
-
-                ws.onopen = () => status.innerText = "ONLINE";
-                ws.onmessage = (e) => {
-                    const div = document.createElement('div');
-                    div.innerText = "> " + e.data;
-                    log.appendChild(div);
-                };
-                ws.onclose = () => setTimeout(start, 5000);
+                connect(url);
             } catch (e) {
-                setTimeout(start, 2000);
+                ui.innerText = "Status: Error. Retrying...";
+                setTimeout(init, 3000);
             }
         }
-        start();
+
+        function connect(url) {
+            ws = new WebSocket(url);
+            ws.binaryType = 'arraybuffer';
+
+            ws.onopen = () => { ui.innerText = "Status: ONLINE"; };
+            
+            ws.onmessage = (event) => {
+                const data = new DataView(event.data);
+                const playerSize = 16; 
+                const numPlayers = event.data.byteLength / playerSize;
+                
+                players = [];
+                for (let i = 0; i < numPlayers; i++) {
+                    const offset = i * playerSize;
+                    players.push({
+                        id: data.getInt32(offset, true),
+                        x: data.getFloat32(offset + 4, true),
+                        y: data.getFloat32(offset + 8, true),
+                        color: data.getInt32(offset + 12, true)
+                    });
+                }
+            };
+
+            ws.onclose = () => {
+                ui.innerText = "Status: Connection lost. Reconnecting...";
+                setTimeout(init, 3000);
+            };
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const key = e.key.toLowerCase();
+                if (['w', 'a', 's', 'd'].includes(key)) ws.send(key);
+            }
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            const touch = e.touches[0];
+            const x = touch.clientX;
+            const y = touch.clientY;
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+
+            if (y < h / 3) ws.send('w');
+            else if (y > (h * 2) / 3) ws.send('s');
+            else if (x < w / 2) ws.send('a');
+            else if (x > w / 2) ws.send('d');
+        });
+
+        function draw() {
+            ctx.fillStyle = 'rgba(10, 10, 10, 0.4)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            players.forEach(p => {
+                const r = (p.color >> 16) & 0xFF;
+                const g = (p.color >> 8) & 0xFF;
+                const b = p.color & 0xFF;
+                const colorStr = `rgb(${r},${g},${b})`;
+
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = colorStr;
+                
+                ctx.fillStyle = colorStr;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = "#fff";
+                ctx.font = "14px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(`Player ${p.id}`, p.x, p.y - 25);
+            });
+
+            requestAnimationFrame(draw);
+        }
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        init();
+        draw();
     </script>
 </body>
 </html>
